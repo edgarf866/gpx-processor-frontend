@@ -1,16 +1,5 @@
 import axios from 'axios';
 
-// ============================================================
-// BASE URL - s'adapte automatiquement selon l'environnement
-// ============================================================
-// En LOCAL (dev) : le proxy Vite redirige /api → localhost:8000
-// En PRODUCTION (Railway) : on pointe vers l'URL du backend Railway
-//
-// Pour configurer, crée un fichier .env dans /frontend :
-//   VITE_API_URL=https://ton-backend.up.railway.app
-//
-// Si pas de .env, ça utilise /api (mode dev avec proxy Vite)
-// ============================================================
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
@@ -18,7 +7,7 @@ const api = axios.create({
   timeout: 120000,
 });
 
-// Upload un seul fichier GPX
+// Upload simple
 export const uploadGPX = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
@@ -28,20 +17,14 @@ export const uploadGPX = async (file) => {
   return response.data;
 };
 
-// Upload multiple fichiers GPX (batch)
+// Upload batch
 export const uploadBatchGPX = async (files, onProgress) => {
   const formData = new FormData();
-  files.forEach((file) => {
-    formData.append('files', file);
-  });
-
+  files.forEach((file) => formData.append('files', file));
   const response = await api.post('/gpx/upload-batch', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: (progressEvent) => {
-      if (onProgress) {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-        onProgress(percent);
-      }
+    onUploadProgress: (e) => {
+      if (onProgress) onProgress(Math.round((e.loaded * 100) / e.total));
     },
   });
   return response.data;
@@ -58,22 +41,35 @@ export const deleteEntry = async (id) => {
   return response.data;
 };
 
-// URLs d'export - doivent aussi utiliser la bonne base
+// URLs exports individuels
 export const getExportUrl = (id, format) => `${API_BASE}/api/gpx/export/${id}/${format}`;
 export const getReportUrl = (id) => `${API_BASE}/api/gpx/report/${id}`;
 
-// Export batch
-export const exportBatch = async (entryIds) => {
-  const response = await api.post('/gpx/export-batch', entryIds, {
-    responseType: 'blob',
-  });
-  const url = window.URL.createObjectURL(new Blob([response.data]));
+// URLs exports fusionnés
+export const getMergedExportUrl = (batchId, format) => `${API_BASE}/api/gpx/export-merged/${batchId}/${format}`;
+
+// Export batch individuels (ZIP)
+export const exportBatchIndividual = async (entryIds) => {
+  const response = await api.post('/gpx/export-batch-individual', entryIds, { responseType: 'blob' });
+  _downloadBlob(response.data, 'exports_individuels.zip');
+};
+
+// Rapport PDF batch
+export const downloadBatchReport = async (entryIds) => {
+  const response = await api.post('/gpx/report-batch', entryIds, { responseType: 'blob' });
+  _downloadBlob(response.data, 'rapport_batch.pdf');
+};
+
+// Utilitaire téléchargement
+function _downloadBlob(data, filename) {
+  const url = window.URL.createObjectURL(new Blob([data]));
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', 'batch_export.zip');
+  link.setAttribute('download', filename);
   document.body.appendChild(link);
   link.click();
   link.remove();
-};
+  window.URL.revokeObjectURL(url);
+}
 
 export default api;
